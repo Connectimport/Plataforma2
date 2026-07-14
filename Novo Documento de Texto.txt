@@ -1,0 +1,738 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+
+  Bell, BookOpen, CheckCircle2, ChevronRight, Crown, Factory, LayoutDashboard,
+  Lock, LogOut, Menu, MessageCircle, PackageSearch, PlayCircle, Search,
+  Settings, ShieldCheck, Truck, User
+} from "lucide-react";
+
+const plans = [
+  { name: "Starter", price: "R$ 49,90", old: "R$ 97,90", discount: "49% OFF", days: 30, cls: "starter" },
+  { name: "PRO", price: "R$ 69,90", old: "R$ 99,90", discount: "30% OFF", days: 90, cls: "pro", featured: true },
+  { name: "Vitalício", price: "R$ 297,90", old: "R$ 427,90", discount: "30% OFF", days: 36500, cls: "life" },
+];
+
+function getUsers() {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem("connect_import_users") || "[]"); }
+  catch { return []; }
+}
+
+function saveUsers(users: any[]) {
+  localStorage.setItem("connect_import_users", JSON.stringify(users));
+}
+function getAdminItems() {
+  try {
+    return JSON.parse(localStorage.getItem("connect_import_items") || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveAdminItems(items: any[]) {
+  localStorage.setItem("connect_import_items", JSON.stringify(items));
+}
+function subscriptionStatus(user: any) {
+  if (!user || user.subscription !== "active") return { active: false, label: "Sem plano", expired: false };
+  if (user.expiresAt && new Date(user.expiresAt) < new Date()) return { active: false, label: "Vencido", expired: true };
+  return { active: true, label: user.plan || "Ativo", expired: false };
+}
+
+function formatDate(value: string) {
+  if (!value) return "-";
+  return new Date(value).toLocaleDateString("pt-BR");
+}
+
+function Login({ onLogin }: { onLogin: (user:any)=>void }) {
+  const [mode,setMode] = useState("login");
+  const [name,setName] = useState("");
+  const [email,setEmail] = useState("aluno@email.com");
+  const [password,setPassword] = useState("123456");
+  const [msg,setMsg] = useState("");
+
+  function register() {
+    setMsg("");
+
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanName || !cleanEmail || password.length < 6) {
+      setMsg("Preencha nome, e-mail e senha com no mínimo 6 caracteres.");
+      return;
+    }
+
+    const users = getUsers();
+    const exists = users.some((user:any)=>user.email === cleanEmail);
+
+    if (exists) {
+      setMsg("Este e-mail já está cadastrado.");
+      return;
+    }
+
+    const userData = {
+      id: Date.now(),
+      name: cleanName,
+      email: cleanEmail,
+      password,
+      role: cleanEmail === "admin@connectimport.com" ? "admin" : "user",
+      subscription: "inactive",
+    };
+
+    saveUsers([...users, userData]);
+    localStorage.setItem("connect_import_session", JSON.stringify(userData));
+    onLogin(userData);
+  }
+
+  function login() {
+    setMsg("");
+
+    const cleanEmail = email.trim().toLowerCase();
+    const users = getUsers();
+
+    const user = users.find(
+      (item:any)=>item.email === cleanEmail && item.password === password
+    );
+
+    if (!user) {
+      setMsg("E-mail ou senha inválidos. Cadastre-se se ainda não tiver conta.");
+      return;
+    }
+
+    const fixedUser = {
+      ...user,
+      role: user.role || "user",
+    };
+
+    localStorage.setItem("connect_import_session", JSON.stringify(fixedUser));
+    onLogin(fixedUser);
+  }
+
+  return (
+    <div className="loginPage">
+      <div className="loginCard">
+        <div className="brandIcon">CI</div>
+        <h1>{mode === "login" ? "Entrar na plataforma" : "Criar cadastro"}</h1>
+        <p className="muted">{mode === "login" ? "Acesse seus conteúdos premium." : "Crie sua conta na Connect Import."}</p>
+
+        {mode === "register" ? <input placeholder="Nome completo" value={name} onChange={(e)=>setName(e.target.value)} /> : null}
+        <input placeholder="E-mail" value={email} onChange={(e)=>setEmail(e.target.value)} />
+        <input placeholder="Senha" type="password" value={password} onChange={(e)=>setPassword(e.target.value)} />
+        {msg ? <div className="error">{msg}</div> : null}
+
+        <button className="btn" style={{width:"100%"}} onClick={()=> mode==="login" ? login() : register()}>
+          {mode === "login" ? "Acessar agora" : "Criar conta"}
+        </button>
+
+        <button className="btn" style={{width:"100%",marginTop:12,background:"transparent",color:"#c4b5fd"}} onClick={()=>{setMode(mode==="login"?"register":"login");setMsg("");}}>
+          {mode === "login" ? "Não tenho conta, quero me cadastrar" : "Já tenho conta, quero entrar"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function Sidebar({
+  view,
+  setView,
+  goPlans,
+  user,
+  isSubscribed
+}:any) {
+  const items = [
+    { id:"dashboard", label:"Início", icon:LayoutDashboard },
+    { id:"courses", label:"Meus cursos", icon:BookOpen },
+    { id:"community", label:"Comunidade", icon:MessageCircle },
+    { id:"factories", label:"Fábricas", icon:Factory },
+    { id:"products", label:"Produtos", icon:PackageSearch },
+    { id:"tracking", label:"Rastreio", icon:Truck },
+{
+  id:"import",
+  label:"Realizar Importação",
+  icon:ChevronRight,
+  premium:true
+},
+    ...(user?.role === "admin" ? [{ id:"admin", label:"Admin", icon:ShieldCheck }] : []),
+    { id:"settings", label:"Configurações", icon:Settings },
+  ];
+
+  return (
+    <aside className="sidebar">
+      <div className="brand">
+        <div className="brandIcon">CI</div>
+        <h1>CONNECT IMPORT</h1>
+      </div>
+
+      <nav className="nav">
+        {items.map((item:any)=>{
+          const Icon = item.icon;
+          return (
+            <button key={item.id} onClick={()=>{
+  if(item.premium && !isSubscribed){
+    setView("plans");
+    return;
+  }
+
+  if (item.id === "import") {
+    window.open("https://www.cssbuy.com/", "_blank");
+    return;
+  }
+  if (item.id === "tracking") {
+  window.open(
+    "https://rastreamento.correios.com.br/","_blank"
+  );
+  return;
+}
+
+  setView(item.id);
+}} className={view===item.id?"active":""}>
+              <Icon size={18}/>{item.label}
+            </button>
+          )
+        })}
+      </nav>
+      {!isSubscribed ? (
+        <div className="sidePlan">
+          <strong>Tenha um plano de acesso</strong>
+          <p>Acesso liberado aos módulos premium.</p>
+          <button className="btn" style={{width:"100%"}} onClick={goPlans}>Ver Planos</button>
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+function Header({user,onLogout}:any) {
+  return (
+    <header className="topbar">
+      <div className="mobileBrand"><Menu size={24}/> Connect Import</div>
+      <div className="search"><Search size={16}/> Buscar cursos, aulas ou materiais</div>
+      <div style={{display:"flex",alignItems:"center",gap:14}}>
+        <Bell size={20}/>
+        <div className="userbox">
+          <p><b>{user?.name || "Aluno"}</b></p>
+          <p className="muted" style={{fontSize:12}}>{user?.email}</p>
+          <p style={{fontSize:12,color:"#4ade80",fontWeight:900}}>{subscriptionStatus(user).label}</p>
+        </div>
+        <button className="btn" onClick={onLogout}><LogOut size={18}/></button>
+      </div>
+    </header>
+  );
+}
+
+function Dashboard({isSubscribed,onSubscribe}:any) {
+  const areas = [
+    {title:"Produtos",icon:PackageSearch,img:"https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=1200&auto=format&fit=crop",desc:"Produtos lucrativos e tendências."},
+    {title:"Rastreio",icon:Truck,img:"https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?q=80&w=1200&auto=format&fit=crop",desc:"Acompanhe pedidos e encomendas."},
+    {title:"Aulas",icon:PlayCircle,img:"https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1200&auto=format&fit=crop",desc:"Conteúdo exclusivo e atualizado."},
+    {title:"Fábricas",icon:Factory,img:"https://images.unsplash.com/photo-1565008447742-97f6f38c985c?q=80&w=1200&auto=format&fit=crop",desc:"Fornecedores e contatos confiáveis."},
+  ];
+
+  return (
+    <div className="page">
+      <div className="welcome">
+        <small>Bem-vindo de volta</small>
+        <h2>Olá, <span style={{color:"#8b5cf6"}}>Erik.</span></h2>
+      </div>
+
+      <section className="hero">
+        <img src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?q=80&w=1800&auto=format&fit=crop" />
+        <div className="heroContent">
+          <span className="pill">Aula inicial</span>
+          <h1>Importe produtos direto da China!</h1>
+          <p>Aprenda a importar eletrônicos, acessórios e produtos com fornecedores confiáveis e alta margem de lucro.</p>
+          <div>
+            <button className="btn">Assistir agora</button>
+            <button className="btn" style={{marginLeft:14,background:"rgba(0,0,0,.4)"}}><PlayCircle size={20}/></button>
+          </div>
+        </div>
+      </section>
+
+      <div className="cardsTitle">
+        <small>Principais áreas</small>
+        <h2>Explore a plataforma</h2>
+      </div>
+
+      <div className="grid4">
+        {areas.map((area:any)=>{
+          const Icon = area.icon;
+          return (
+            <button key={area.title} className={"areaCard " + (!isSubscribed ? "locked" : "")} onClick={()=> !isSubscribed && onSubscribe()}>
+              <img src={area.img}/>
+              {!isSubscribed ? (
+                <div className="lockedOverlay">
+                  <Lock size={34}/>
+                  <span>Conteúdo premium</span>
+                  <h3>{area.title}</h3>
+                </div>
+              ) : null}
+              <div className="areaText">
+                <Icon size={28}/>
+                <h3>{area.title}</h3>
+                <p>{area.desc}</p>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  );
+}
+
+function Locked({title,onSubscribe}:any) {
+  return (
+    <div className="page">
+      <div className="card" style={{minHeight:420,display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center"}}>
+        <div>
+          <Lock size={48} color="#a78bfa"/>
+          <h1>{title}</h1>
+          <p className="muted">Este conteúdo é exclusivo para assinantes ativos.</p>
+          <button className="btn" onClick={onSubscribe}><Crown size={18}/> Ver Planos</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function getContentByType(type:string) {
+  return getAdminItems().filter((item:any)=>item.type === type);
+}
+
+function CoursesPage({ isSubscribed, onSubscribe }: any) {
+  if (!isSubscribed) {
+    return <Locked title="Cursos bloqueados" onSubscribe={onSubscribe} />;
+  }
+
+  const lessons = getContentByType("Aula");
+
+  return (
+    <div className="page">
+      <div className="cardsTitle">
+        <small>Área de aulas</small>
+        <h2>Meus Cursos</h2>
+      </div>
+
+      {lessons.length === 0 ? (
+        <div className="card">
+          <h2>Nenhuma aula cadastrada ainda</h2>
+          <p className="muted">
+            Cadastre aulas pelo painel Admin usando o tipo Aula.
+          </p>
+        </div>
+      ) : (
+        <div className="grid4">
+          {lessons.map((lesson:any)=>(
+            <div key={lesson.id} className="areaCard">
+              <img
+                src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?q=80&w=1200&auto=format&fit=crop"
+                alt={lesson.title}
+              />
+
+              <div className="areaText">
+                <PlayCircle size={30} />
+                <h3>{lesson.title}</h3>
+                <p>{lesson.description || "Aula exclusiva da Connect Import"}</p>
+
+                <button
+                  className="btn"
+                  style={{ marginTop: 12 }}
+                  onClick={() => window.open(lesson.link, "_blank")}
+                >
+                  Assistir aula
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContentList({ type }: { type:string }) {
+  const items = getContentByType(type);
+
+  return (
+    <div style={{ marginTop: 24 }}>
+      {items.length === 0 ? (
+        <p className="muted">Nenhum conteúdo cadastrado ainda.</p>
+      ) : (
+        items.map((item:any)=>(
+          <div key={item.id} className="card" style={{ marginBottom: 16 }}>
+            <h3>{item.title}</h3>
+            <p className="muted">{item.description || item.type}</p>
+            <button
+              className="btn"
+              onClick={() => window.open(item.link, "_blank")}
+            >
+              Abrir link
+            </button>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+
+function ProductsPage({ isSubscribed, onSubscribe }: any) {
+  if (!isSubscribed) {
+    return <Locked title="Produtos bloqueados" onSubscribe={onSubscribe} />;
+  }
+
+  const products = getContentByType("Produto");
+
+  return (
+    <div className="page">
+      <div className="cardsTitle">
+        <small>Produtos selecionados</small>
+        <h2>Produtos para importar</h2>
+      </div>
+
+      {products.length === 0 ? (
+        <div className="card">
+          <h2>Nenhum produto cadastrado ainda</h2>
+          <p className="muted">
+            Cadastre produtos pelo painel Admin usando o tipo Produto.
+          </p>
+        </div>
+      ) : (
+        <div className="grid4">
+          {products.map((product:any)=>(
+            <div key={product.id} className="areaCard">
+              <img
+                src="https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?q=80&w=1200&auto=format&fit=crop"
+                alt={product.title}
+              />
+
+              <div className="areaText">
+                <PackageSearch size={30} />
+                <h3>{product.title}</h3>
+                <p>{product.description || "Produto recomendado para importação"}</p>
+
+                <button
+                  className="btn"
+                  style={{ marginTop: 12 }}
+                  onClick={() => window.open(product.link, "_blank")}
+                >
+                  Ver produto
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SimplePage({title,subtitle,isSubscribed,onSubscribe,type}:any) {
+  if (!isSubscribed) return <Locked title={title + " bloqueado"} onSubscribe={onSubscribe}/>
+  return (
+    <div className="page">
+      <div className="card">
+        <p style={{color:"#a78bfa",fontWeight:900}}>Área exclusiva</p>
+        <h1>{title}</h1>
+        <p className="muted">{subtitle}</p>
+      </div>
+
+      {type ? <ContentList type={type} /> : null}
+    </div>
+  )
+}
+
+function Benefits({plan}:any) {
+  if (plan.name === "Starter") return (
+    <div className="benefits">
+      <div>✔ Acesso às fábricas diretas na China</div>
+      <div>✔ Um painel com produtos atualizados</div>
+      <div>✔ O Minerador IA de buscas e perguntas</div>
+      <div>✔ Gerador de imagens 4K: 3 créditos mensais</div>
+      <div>✔ Rastreio em tempo real de até 5 envios</div>
+      <div>✔ Módulos de aulas exclusivas</div>
+      <div>✔ Sistema Indique e Ganhe</div>
+      <div className="no">✖ Acesso aos marketplaces locais na China</div>
+      <div className="no">✖ Prioridade no suporte</div>
+      <div className="no">✖ Grupo de Networking no WhatsApp</div>
+    </div>
+  );
+
+  if (plan.name === "PRO") return (
+    <div className="benefits">
+      <div>✔ Acesso à fábricas exclusivas na China</div>
+      <div>✔ Acesso aos marketplaces locais na China</div>
+      <div>✔ Rastreio em tempo real de até 10 envios</div>
+      <div>✔ Acesso à comunidade</div>
+      <div>✔ Alertas e oportunidades em primeira mão</div>
+      <div>✔ Sorteios mensais e premiações</div>
+      <div>✔ Sistema Indique e Ganhe</div>
+      <div className="no">✖ Baixar imagens ilimitadas</div>
+      <div className="no">✖ Prioridade no suporte</div>
+      <div className="no">✖ Networking no WhatsApp</div>
+    </div>
+  );
+
+  return (
+    <div className="benefits">
+      <div>✔ Produtos originais, lacrados e desbloqueados</div>
+      <div>✔ Baixar imagens ilimitadas</div>
+      <div>✔ Painel de fábricas e produtos exclusivos</div>
+      <div>✔ Inteligência Artificial o Minerador</div>
+      <div>✔ Acesso aos marketplaces locais na China</div>
+      <div>✔ Sem limites de rastreios</div>
+      <div>✔ Acesso à comunidade</div>
+      <div>✔ Prioridade no suporte</div>
+      <div>✔ Medalha de destaque na comunidade</div>
+      <div>✔ Grupo de Networking no WhatsApp</div>
+      <div>✔ Após 12 meses receba 100% do valor pago</div>
+    </div>
+  );
+}
+
+function Plans({activate,setView}:any) {
+  return (
+    <div className="page">
+      <div style={{textAlign:"center",marginBottom:34}}>
+        <p style={{color:"#a78bfa",letterSpacing:4,textTransform:"uppercase",fontWeight:900}}>Planos de acesso</p>
+        <h1 style={{fontSize:52,margin:"8px 0"}}>Escolha seu plano</h1>
+        <p className="muted">Tenha acesso completo às aulas, produtos, rastreio e fornecedores.</p>
+      </div>
+
+      <div className="plans">
+        {plans.map((plan:any)=>(
+          <div key={plan.name} className={"plan " + (plan.featured?"featured":"")}>
+            {plan.featured ? <div className="popular">Mais popular</div> : null}
+            <h2 className={plan.cls}>{plan.name}</h2>
+            <p className="muted">{plan.name === "PRO" ? "Acesse por 3 meses com benefícios exclusivos." : plan.name === "Starter" ? "Acesso por 30 dias." : "Acesso vitalício."}</p>
+            <div className="discount">{plan.discount}</div>
+            <div className="old">{plan.old}</div>
+            <div className="price">{plan.price}</div>
+            <Benefits plan={plan}/>
+            <button className="btn" style={{width:"100%",background:plan.name==="Starter"?"#fff":plan.name==="PRO"?"#3b82f6":"#facc15",color:plan.name==="PRO"?"#fff":"#000"}} onClick={()=>{activate(plan);setView("dashboard")}}>Assinar plano</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Admin() {
+  const [refresh,setRefresh] = useState(0);
+  const users = getUsers();
+  const [title,setTitle] = useState("");
+  const [link,setLink] = useState("");
+  const [type,setType] = useState("Produto");
+  const [description,setDescription] = useState("");
+  const [items,setItems] = useState(getAdminItems());
+
+  function del(email:string) {
+    if (!confirm("Deseja realmente excluir este usuário?")) return;
+
+    saveUsers(users.filter((u:any)=>u.email!==email));
+    setRefresh(refresh+1);
+  }
+
+  function addItem() {
+    if(!title.trim() || !link.trim()) {
+      alert("Preencha título e link.");
+      return;
+    }
+
+    const newItem = {
+      id: Date.now(),
+      title: title.trim(),
+      link: link.trim(),
+      type,
+      description: description.trim(),
+    };
+
+    const newItems = [...items, newItem];
+
+    setItems(newItems);
+    saveAdminItems(newItems);
+
+    setTitle("");
+    setLink("");
+    setDescription("");
+    setType("Produto");
+  }
+
+  function removeItem(id:number) {
+    const filtered = items.filter((i:any)=>i.id!==id);
+
+    setItems(filtered);
+    saveAdminItems(filtered);
+  }
+
+  return (
+    <div className="page">
+      <h1>Painel administrativo</h1>
+
+      <div className="card" style={{marginBottom:24}}>
+        <h2>Adicionar conteúdo</h2>
+
+        <input
+          placeholder="Título do conteúdo"
+          value={title}
+          onChange={(e)=>setTitle(e.target.value)}
+        />
+
+        <input
+          placeholder="Link do produto, vídeo, fábrica ou comunidade"
+          value={link}
+          onChange={(e)=>setLink(e.target.value)}
+        />
+
+        <input
+          placeholder="Descrição opcional"
+          value={description}
+          onChange={(e)=>setDescription(e.target.value)}
+        />
+
+        <select value={type} onChange={(e)=>setType(e.target.value)}>
+          <option>Produto</option>
+          <option>Aula</option>
+          <option>Fábrica</option>
+          <option>Comunidade</option>
+          <option>Rastreio</option>
+        </select>
+
+        <button className="btn" onClick={addItem}>
+          Salvar conteúdo
+        </button>
+      </div>
+
+      <div className="card" style={{marginBottom:24}}>
+        <h2>Conteúdos cadastrados</h2>
+
+        {items.length === 0 ? (
+          <p className="muted">Nenhum conteúdo cadastrado ainda.</p>
+        ) : (
+          items.map((item:any)=>(
+            <div
+              key={item.id}
+              style={{
+                display:"flex",
+                justifyContent:"space-between",
+                alignItems:"center",
+                gap:16,
+                borderBottom:"1px solid rgba(255,255,255,.08)",
+                padding:"14px 0"
+              }}
+            >
+              <div>
+                <strong>{item.title}</strong>
+                <p className="muted">{item.type} — {item.description || item.link}</p>
+              </div>
+
+              <button className="danger" onClick={()=>removeItem(item.id)}>
+                Excluir
+              </button>
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Assinantes cadastrados</h2>
+        <table className="adminTable">
+          <thead>
+            <tr><th>Cliente</th><th>E-mail</th><th>Plano</th><th>Status</th><th>Vencimento</th><th>Ações</th></tr>
+          </thead>
+          <tbody>
+            {users.length === 0 ? <tr><td colSpan={6}>Nenhum usuário cadastrado ainda.</td></tr> : users.map((u:any)=>{
+              const st = subscriptionStatus(u);
+              return (
+                <tr key={u.email}>
+                  <td>{u.name}</td>
+                  <td>{u.email}</td>
+                  <td>{u.plan || "-"}</td>
+                  <td><span className={"status " + (st.active?"activeStatus":"inactiveStatus")}>{st.active?"Ativo":st.expired?"Vencido":"Sem plano"}</span></td>
+                  <td>{formatDate(u.expiresAt)}</td>
+                  <td>{u.role==="admin" ? <span className="muted">Protegido</span> : <button className="danger" onClick={()=>del(u.email)}>Excluir</button>}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+export default function Home() {
+  const [user,setUser] = useState<any>(null);
+  const [view,setView] = useState("dashboard");
+  const [isSubscribed,setIsSubscribed] = useState(false);
+
+  useEffect(()=>{
+    const saved = localStorage.getItem("connect_import_session");
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      setUser(parsed);
+      setIsSubscribed(subscriptionStatus(parsed).active);
+    }
+  },[]);
+
+  function login(u:any) {
+    setUser(u);
+    setIsSubscribed(subscriptionStatus(u).active);
+  }
+
+  function logout() {
+    localStorage.removeItem("connect_import_session");
+    setUser(null);
+    setIsSubscribed(false);
+    setView("dashboard");
+  }
+
+  function activate(plan:any) {
+    const now = new Date();
+    const expires = new Date(now);
+    expires.setDate(expires.getDate()+plan.days);
+    const updated = {...user, subscription:"active", plan:plan.name, startedAt:now.toISOString(), expiresAt:expires.toISOString()};
+    const updatedUsers = getUsers().map((u:any)=>u.email===updated.email?updated:u);
+    saveUsers(updatedUsers);
+    localStorage.setItem("connect_import_session", JSON.stringify(updated));
+    setUser(updated);
+    setIsSubscribed(true);
+  }
+
+  if (!user) return <Login onLogin={login}/>;
+
+  return (
+    <div className="app">
+      <Sidebar
+  view={view}
+  setView={setView}
+  goPlans={()=>setView("plans")}
+  user={user}
+  isSubscribed={isSubscribed}
+/>
+      <main className="main">
+        <Header user={user} onLogout={logout}/>
+        {view==="dashboard" ? <Dashboard isSubscribed={isSubscribed} onSubscribe={()=>setView("plans")}/> : null}
+        {view==="courses" ? (
+          <CoursesPage
+            isSubscribed={isSubscribed}
+            onSubscribe={()=>setView("plans")}
+          />
+        ) : null}
+        {view==="community" ? <SimplePage title="Comunidade" subtitle="Interação, suporte e networking." isSubscribed={isSubscribed} onSubscribe={()=>setView("plans")} type="Comunidade"/> : null}
+        {view==="factories" ? <SimplePage title="Fábricas" subtitle="Fornecedores e contatos confiáveis." isSubscribed={isSubscribed} onSubscribe={()=>setView("plans")} type="Fábrica"/> : null}
+        {view==="products" ? (
+          <ProductsPage
+            isSubscribed={isSubscribed}
+            onSubscribe={()=>setView("plans")}
+          />
+        ) : null}
+        {view==="tracking" ? <SimplePage title="Rastreio" subtitle="Acompanhe pedidos e envios." isSubscribed={isSubscribed} onSubscribe={()=>setView("plans")} type="Rastreio"/> : null}
+        {view==="settings" ? <SimplePage title="Configurações" subtitle="Personalize sua conta." isSubscribed={true} onSubscribe={()=>setView("plans")}/> : null}
+        {view==="plans" ? <Plans activate={activate} setView={setView}/> : null}
+        {view==="admin" ? (user.role==="admin" ? <Admin/> : <Locked title="Acesso restrito" onSubscribe={()=>setView("dashboard")}/>) : null}
+      </main>
+    </div>
+  );
+}
